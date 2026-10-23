@@ -7,7 +7,7 @@ Nothing in this file calls an AI model.
 from __future__ import annotations
 
 import re
-from typing import Iterable, Optional
+from typing import Iterable
 
 from agent.schemas import (
     Action, GuardrailResult, Level, SafetyAssessment, WasteCase, OBJECTIVES,
@@ -16,7 +16,6 @@ from tools.material_lookup import lookup_material
 
 MAX_FIELD_LEN = 2000
 
-# Words that mean "possible immediate danger" -> emergency path.
 EMERGENCY_TERMS = [
     "leak", "leaking", "leaked", "fume", "fumes", "smoke", "smoking", "fire", "burning",
     "on fire", "flames", "hissing", "swollen", "swelling", "bulging", "overheating",
@@ -24,7 +23,6 @@ EMERGENCY_TERMS = [
     "dizzy", "dizziness", "can't breathe", "difficulty breathing", "explosion", "exploded",
 ]
 
-# Words that mean "treat as unknown or high risk" (not necessarily an emergency).
 HIGH_RISK_TERMS = [
     "unlabelled", "unlabeled", "unmarked", "unknown", "mystery", "unidentified",
     "chemical smell", "corrosive", "toxic", "poison", "pesticide", "acid", "solvent",
@@ -37,10 +35,6 @@ _NEGATORS = ("no", "not", "without", "never", "none", "n't", "zero")
 
 
 def _mentions(term: str, text: str) -> bool:
-    """True when `term` appears in `text` and is not negated just before it.
-
-    Handles phrasing like "no leaks reported" or "not leaking".
-    """
     text = text.lower()
     for m in re.finditer(r"(?<![a-z0-9])" + re.escape(term) + r"(?:s|ed|ing)?(?![a-z0-9])", text):
         window = text[max(0, m.start() - 24):m.start()]
@@ -55,9 +49,7 @@ def _hits(terms: Iterable[str], text: str) -> list[str]:
     return [t for t in terms if _mentions(t, text)]
 
 
-# ---------------------------------------------------------------- input validation
 def validate_case(case: WasteCase) -> list[str]:
-    """Return a list of human-readable problems (empty list means valid)."""
     problems: list[str] = []
     name = (case.waste_name or "").strip()
     desc = (case.description or "").strip()
@@ -73,7 +65,6 @@ def validate_case(case: WasteCase) -> list[str]:
     return problems
 
 
-# ---------------------------------------------------------------- assessment
 def missing_information(case: WasteCase, has_material_match: bool) -> list[str]:
     missing: list[str] = []
     if not (case.category or "").strip() and not has_material_match:
@@ -88,7 +79,6 @@ def missing_information(case: WasteCase, has_material_match: bool) -> list[str]:
 
 
 def assess(case: WasteCase) -> SafetyAssessment:
-    """Deterministic safety assessment of a case."""
     full_text = " ".join([case.waste_name, case.description, case.category, case.danger_info])
     match = lookup_material(case)
     reasons: list[str] = []
@@ -123,17 +113,12 @@ def assess(case: WasteCase) -> SafetyAssessment:
     )
 
 
-# ---------------------------------------------------------------- guardrail
 def review_action(
     proposed: str,
     assessment: SafetyAssessment,
     executed: list[str],
 ) -> GuardrailResult:
-    """Check an action proposed by the Decider. May reject or replace it.
-
-    The replacement is a deterministic safety choice and is labelled as such
-    in the trace; it is never presented as the Decider's decision.
-    """
+    """Check an action proposed by the Decider. May reject or replace it."""
     esc = Action.ESCALATE.value
     already = set(executed)
 
@@ -187,10 +172,27 @@ def review_action(
         fallback = Action.CHECK_EVIDENCE.value if Action.CHECK_EVIDENCE.value not in already else Action.CONCLUDE.value
         return block("S5_NOTHING_MISSING", "No information is missing, so there is nothing to request.", fallback)
 
+    # S6 - routine material without immediate danger should not escalate solely
+    # because the Decider assigned escalation a high score.
+    # Keep the ordinary return below; it remains the default for all other cases.
+    if proposed == esc and assessment.level == Level.ROUTINE and not assessment.emergency:
+        if Action.INVESTIGATE_RECOVERY.value not in already:
+            fallback = Action.INVESTIGATE_RECOVERY.value
+        elif Action.CHECK_DISPOSAL.value not in already:
+            fallback = Action.CHECK_DISPOSAL.value
+        elif Action.CHECK_EVIDENCE.value not in already:
+            fallback = Action.CHECK_EVIDENCE.value
+        else:
+            fallback = Action.CONCLUDE.value
+        return block(
+            "S6_NO_UNWARRANTED_ESCALATION",
+            "Routine material with no immediate-danger indicators does not warrant escalation by itself.",
+            fallback,
+        )
+
     return GuardrailResult(True, proposed, proposed, "", "")
 
 
-# ---------------------------------------------------------------- output scanning
 UNSAFE_PATTERNS = [
     r"\b(burn|incinerat\w*|set fire)\b",
     r"\b(mix|mixing|combine|blend)\b.{0,30}\b(chemical|acid|solvent|oil|bleach|ammonia)\w*",
@@ -203,16 +205,10 @@ UNSAFE_PATTERNS = [
     r"\b(pour|dump|flush)\b.{0,25}\b(drain|ground|soil|water|sewer)\b",
     r"\b(sniff|taste|touch)\b",
 ]
-# Phrases that are warnings ("do not burn") are fine; strip them before scanning.
 _WARNING_PREFIX = r"(?:do not|don't|never|must not|should not|avoid|without|no|not)\s+(?:[\w,'/-]+\s+){0,6}"
 
 
 def scan_unsafe_instructions(text: str) -> list[str]:
-    """Return unsafe-instruction patterns found in `text`, ignoring negated warnings.
-
-    This is a conservative filter for AI-generated text. It can have false
-    positives; when it fires on generated text the text is discarded.
-    """
     found: list[str] = []
     lowered = (text or "").lower()
     for pat in UNSAFE_PATTERNS:
