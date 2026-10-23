@@ -308,6 +308,38 @@ def page_recs() -> None:
     if not r:
         return
     mode_banner(r)
+    
+    # Visual gallery: uploaded images in the repository root
+    st.markdown("### ♻️ Waste recovery in action")
+    image_files = [
+        ("21465c57-3326-4d11-bc7f-e1c9eaf90533.png", "Waste and recycling"),
+        ("compagnons-aI4RJ--Mw4I-unsplash.jpg", "Recovery inspiration"),
+        ("gary-chan-YzSZN3qvHeo-unsplash.jpg", "Sustainable materials"),
+        ("gustav-gullstrand-d6kSvT2xZQo-unsplash.jpg", "Reuse and recovery"),
+        ("jas-min-CIItgnBEOgw-unsplash.jpg", "Environmental solutions"),
+        ("kazuend-19SC2oaVZW0-unsplash.jpg", "Nature and sustainability"),
+        ("pawel-czerwinski-RkIsyD_AVvc-unsplash.jpg", "Materials and recycling"),
+        ("pexels-cottonbro-6591422.jpg", "Waste management"),
+        ("pexels-cottonbro-6591427.jpg", "Recovery processes"),
+        ("pexels-julia-m-cameron-6995380.jpg", "Sustainable practices"),
+        ("pexels-ron-lach-8287259.jpg", "Reuse and recycling"),
+        ("sticker-it-b-IoAXHvFVg-unsplash.jpg", "Circular economy"),
+        ("vlad-hilitanu-QqSIuvz94s8-unsplash.jpg", "Environmental impact"),
+    ]
+
+    existing_images = [
+        (filename, caption)
+        for filename, caption in image_files
+        if os.path.isfile(filename)
+    ]
+
+    if existing_images:
+        columns = st.columns(3)
+        for index, (filename, caption) in enumerate(existing_images):
+            with columns[index % 3]:
+                st.image(filename, use_container_width=True)
+                st.caption(caption)
+
     rec = r.recommendation
     if rec.pathway.value == "ESCALATE":
         st.markdown(f"<div class='emergency'>{esc(rec.headline)}</div>", unsafe_allow_html=True)
