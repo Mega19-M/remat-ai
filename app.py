@@ -262,7 +262,7 @@ def need_result() -> CaseResult | None:
 
 
 def display_next_steps(result: CaseResult) -> list[str]:
-    """Return user-facing next steps with a specific routine crop-residue route."""
+    """Return concise next steps, avoiding duplicate crop-residue guidance."""
     steps = list(result.recommendation.next_steps or [])
     case = result.case
     assessment = result.assessment
@@ -272,18 +272,34 @@ def display_next_steps(result: CaseResult) -> list[str]:
         "rice straw", "paddy straw", "crop straw", "agricultural residue",
         "crop residue", "stubble", "husk", "bagasse"
     ))
-    generic = "Confirm any named authority or handler directly before acting; this app verifies no facility."
 
     if (pathway == "RECOVER" and assessment.level.value == "routine"
             and not assessment.emergency and is_crop_residue):
-        steps = [step for step in steps if step.strip() != generic]
+        # Replace any workflow-generated recovery step with one canonical step.
+        # This prevents semantically duplicate guidance even if wording changes.
+        steps = [
+            step for step in steps
+            if not any(term in step.lower() for term in (
+                "krishi vigyan kendra", "biomass buyer", "rice-straw recovery",
+                "rice straw recovery", "crop-residue recovery",
+            ))
+        ]
         steps.append(
-            "Ask the district agriculture office or nearest Krishi Vigyan Kendra (KVK) "
-            "which rice-straw recovery methods, machinery and local biomass buyers are "
-            "currently available. Confirm any buyer or facility directly; this app has "
-            "not verified local availability or acceptance."
+            "Contact the district agriculture office or nearest Krishi Vigyan Kendra (KVK) "
+            "to confirm suitable rice-straw recovery methods, machinery availability, "
+            "and local biomass buyers. Confirm acceptance directly; this app has not "
+            "verified any local buyer or facility."
         )
-    return steps
+
+    # Remove exact duplicates while preserving order.
+    unique_steps = []
+    seen = set()
+    for step in steps:
+        normalized = " ".join(step.lower().split())
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            unique_steps.append(step)
+    return unique_steps
 
 
 def page_recs() -> None:
