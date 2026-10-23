@@ -1,4 +1,3 @@
-
 """RE:MAT AI - Streamlit dashboard.
 
 Run with: streamlit run app.py
@@ -12,7 +11,7 @@ import os
 import streamlit as st
 
 import config
-from agent.decider import DeciderUnavailable, HttpDeciderBackend
+from agent.decider import HttpDeciderBackend
 from agent.generation import BedrockGenerator
 from agent.schemas import OBJECTIVES, CaseResult, Label, WasteCase
 from agent.workflow import run_case
@@ -22,8 +21,7 @@ from tools.material_lookup import load_scenarios, load_sources
 # ------------------------------------------------------------------ settings
 config.load_dotenv_if_present()
 
-# Streamlit Cloud Secrets are not automatically environment variables.
-# Copy supported secrets into the environment before loading Settings.
+# Copy Streamlit Cloud Secrets into environment variables before loading settings.
 _SECRET_ENV_NAMES = (
     "REMAT_DECIDER_URL",
     "DECIDER_API_KEY",
@@ -40,7 +38,7 @@ for _name in _SECRET_ENV_NAMES:
         if _name in st.secrets and _name not in os.environ:
             os.environ[_name] = str(st.secrets[_name])
     except Exception:
-        # Secrets may not be configured; demo mode should still work.
+        # Demo mode should work even when secrets are not configured.
         pass
 
 SETTINGS = config.Settings.from_env()
@@ -131,17 +129,6 @@ def init_state() -> None:
     for k, v in defaults.items():
         st.session_state.setdefault(k, v)
 
-    for k in (
-        "f_name",
-        "f_desc",
-        "f_cat",
-        "f_loc",
-        "f_danger",
-        "f_obj",
-        "f_photo_ok",
-    ):
-        st.session_state[k] = st.session_state[k]
-
 
 def load_scenario(sid: str) -> None:
     """Load a synthetic scenario into the form."""
@@ -192,43 +179,34 @@ with st.sidebar:
 
     else:
         with st.expander("Live settings", expanded=True):
-            decider_url = st.text_input(
+            st.text_input(
                 "Decider server URL",
                 value=SETTINGS.decider_url,
                 key="decider_url",
             )
 
-            bedrock_model = st.text_input(
+            st.text_input(
                 "Bedrock model id",
                 value=SETTINGS.bedrock_model_id,
                 key="bedrock_model",
                 help="A model id you have access to.",
             )
 
-            region = st.text_input(
+            st.text_input(
                 "AWS region",
                 value=SETTINGS.aws_region,
                 key="region",
             )
 
+            # Do not assume that a hosted endpoint exposes a public GET /health.
+            # The actual authenticated POST /v1/decide request is tested when
+            # the user runs an assessment.
             if st.button("Check Decider server"):
-                try:
-                    info = HttpDeciderBackend(
-                        decider_url,
-                        5,
-                        api_key=SETTINGS.decider_api_key,
-                    ).health()
-
-                    st.success("Decider endpoint reachable.")
-                    st.json(info)
-
-                except DeciderUnavailable as exc:
-                    st.error(str(exc))
-
-                except Exception as exc:
-                    st.error(
-                        f"Unexpected health-check error: {type(exc).__name__}: {exc}"
-                    )
+                st.info(
+                    "This button does not call /health because the hosted "
+                    "service may not expose that endpoint. Run an assessment "
+                    "to test the actual authenticated decision request."
+                )
 
         if st.session_state.get(
             "decider_url", SETTINGS.decider_url
