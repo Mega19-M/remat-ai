@@ -1,0 +1,6 @@
+# App dependencies (UI + Amazon Bedrock through the Strands Agents SDK).
+# Version bounds are conservative guesses: PyPI metadata could not be read while this project was
+# built, so if pip reports a conflict, loosen the bounds and tell us what you used.
+streamlit>=1.40,<2
+boto3>=1.35,<2
+strands-agents>=1.0,<2

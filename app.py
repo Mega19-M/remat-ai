@@ -1,0 +1,392 @@
+"""RE:MAT AI - Streamlit dashboard.
+
+Run with:  streamlit run app.py
+"""
+from __future__ import annotations
+
+import html
+import json
+
+import streamlit as st
+
+import config
+from agent.decider import DeciderUnavailable, HttpDeciderBackend
+from agent.generation import BedrockGenerator
+from agent.schemas import OBJECTIVES, CaseResult, Label, WasteCase
+from agent.workflow import run_case
+from tools.material_lookup import load_scenarios, load_sources
+
+config.load_dotenv_if_present()
+SETTINGS = config.Settings.from_env()
+
+st.set_page_config(page_title="RE:MAT AI", page_icon="♻️", layout="wide")
+
+PAGES = ["Overview", "Waste assessment", "Recommendations", "Decision trace", "Demo scenarios", "About & methodology"]
+CATEGORIES = ["Not sure", "Agricultural residue", "Electronic waste", "Batteries",
+              "Used oil / industrial waste", "Chemical waste", "Other"]
+MODE_DEMO = "Demo (simulated, no AWS needed)"
+MODE_LIVE = "Live (Strands Decider; optional Bedrock summary)"
+
+CSS = """
+<style>
+.block-container {padding-top: 2rem; max-width: 1150px;}
+.remat-hero {background: linear-gradient(120deg,#0b3d2e 0%,#14684a 60%,#1c8a5f 100%); color:#f3fbf6;
+  padding: 1.6rem 1.8rem; border-radius: 16px; margin-bottom: 1rem;}
+.remat-hero h1 {margin:0; font-size:2.1rem; color:#fff;}
+.remat-hero p {margin:.4rem 0 0 0; font-size:1.05rem; opacity:.95;}
+.remat-card {border:1px solid rgba(120,140,130,.35); border-radius:12px; padding:.9rem 1.1rem; margin:.5rem 0;}
+.badge {display:inline-block; padding:.1rem .55rem; border-radius:999px; font-size:.75rem; font-weight:600; margin-right:.4rem;}
+.b-ref {background:#d8f3e3; color:#0b5a37;}
+.b-hyp {background:#fff0c9; color:#7a5200;}
+.b-unk {background:#e6e8ee; color:#394150;}
+.b-saf {background:#fde0e0; color:#8a1c1c;}
+.b-sim {background:#ffe3b8; color:#7a3d00;}
+.b-live {background:#cfeedd; color:#0b5a37;}
+.banner-sim {background:#fff1d6; border-left:6px solid #e08a00; padding:.7rem 1rem; border-radius:8px; color:#5a3300; margin-bottom:.8rem;}
+.banner-live {background:#e3f6ec; border-left:6px solid #1c8a5f; padding:.7rem 1rem; border-radius:8px; color:#0b4a30; margin-bottom:.8rem;}
+.emergency {background:#fde0e0; border-left:6px solid #c62828; padding:.8rem 1rem; border-radius:8px; color:#6d1212; font-weight:600;}
+.small {font-size:.85rem; opacity:.85;}
+</style>
+"""
+st.markdown(CSS, unsafe_allow_html=True)
+
+LABEL_CLASS = {Label.REFERENCE: "b-ref", Label.HYPOTHESIS: "b-hyp", Label.UNKNOWN: "b-unk", Label.SAFETY: "b-saf"}
+
+
+def esc(x) -> str:
+    return html.escape(str(x))
+
+
+def badge(text: str, cls: str) -> str:
+    return f'<span class="badge {cls}">{esc(text)}</span>'
+
+
+# ------------------------------------------------------------------ state
+def init_state() -> None:
+    defaults = {"page": PAGES[0], "f_name": "", "f_desc": "", "f_cat": CATEGORIES[0], "f_loc": "",
+                "f_danger": "", "f_obj": "both", "f_photo_ok": False, "result": None, "scenario_id": None}
+    for k, v in defaults.items():
+        st.session_state.setdefault(k, v)
+    # Streamlit drops the state of widgets that are not drawn in a run; re-assigning keeps the form
+    # contents when the user switches pages.
+    for k in ("f_name", "f_desc", "f_cat", "f_loc", "f_danger", "f_obj", "f_photo_ok"):
+        st.session_state[k] = st.session_state[k]
+
+
+def load_scenario(sid: str) -> None:
+    """Callback: copy a synthetic scenario into the form and go to the assessment page."""
+    sc = next(s for s in load_scenarios() if s["id"] == sid)
+    c = sc["case"]
+    st.session_state.update({
+        "f_name": c["waste_name"], "f_desc": c["description"],
+        "f_cat": c["category"] if c["category"] in CATEGORIES else CATEGORIES[0],
+        "f_loc": c["location"], "f_danger": c["danger_info"], "f_obj": c["objective"],
+        "f_photo_ok": False, "scenario_id": sid, "result": None, "page": "Waste assessment",
+    })
+
+
+def go(page: str) -> None:
+    st.session_state["page"] = page
+
+
+init_state()
+
+# ------------------------------------------------------------------ sidebar
+with st.sidebar:
+    st.markdown("## ♻️ RE:MAT AI")
+    st.caption("The Safe Recovery & Disposal Intelligence Agent")
+    st.radio("Navigate", PAGES, key="page")
+    st.divider()
+    mode = st.radio("Decision mode", [MODE_DEMO, MODE_LIVE], key="mode")
+    if mode == MODE_DEMO:
+        st.markdown('<div class="banner-sim"><b>SIMULATED.</b> A fixed rule list makes the decisions. '
+                    'Strands Decider 2B and Amazon Bedrock are NOT used.</div>', unsafe_allow_html=True)
+    else:
+        with st.expander("Live settings", expanded=True):
+            decider_url = st.text_input("Decider server URL", value=SETTINGS.decider_url, key="decider_url")
+            bedrock_model = st.text_input("Bedrock model id", value=SETTINGS.bedrock_model_id, key="bedrock_model",
+                                          help="A model id you have access to. Run scripts/check_bedrock.py to list options.")
+            region = st.text_input("AWS region", value=SETTINGS.aws_region, key="region")
+            if st.button("Check Decider server"):
+                try:
+                    info = HttpDeciderBackend(decider_url, 5, api_key=SETTINGS.decider_api_key).health()
+                    st.success("Decider endpoint reachable.")
+                    st.json(info)
+                except DeciderUnavailable as exc:
+                    st.error(str(exc))
+        if st.session_state.get("decider_url", SETTINGS.decider_url).startswith("https://"):
+            st.caption("Using the hosted HTTPS Decider endpoint. The API key is read from DECIDER_API_KEY in your local .env; it is not displayed.")
+        else:
+            st.caption("Using a local Decider server. Start `strands-decider serve` in a separate terminal. "
+                       "AWS credentials for the optional Bedrock summary come from your normal AWS configuration.")
+
+
+def current_case() -> WasteCase:
+    photo = st.session_state.get("f_photo")
+    cat = st.session_state["f_cat"]
+    return WasteCase(
+        waste_name=st.session_state["f_name"].strip(), description=st.session_state["f_desc"].strip(),
+        category="" if cat == CATEGORIES[0] else cat, location=st.session_state["f_loc"].strip(),
+        danger_info=st.session_state["f_danger"].strip(), objective=st.session_state["f_obj"],
+        photo_attached=photo is not None, photo_confirmed_by_user=bool(st.session_state["f_photo_ok"]) and photo is not None,
+        synthetic_scenario_id=st.session_state.get("scenario_id"),
+    )
+
+
+def mode_banner(result: CaseResult) -> None:
+    cls = "banner-sim" if result.simulated else "banner-live"
+    st.markdown(f'<div class="{cls}"><b>{esc(result.mode_label)}</b></div>', unsafe_allow_html=True)
+    if result.case.synthetic_scenario_id:
+        st.markdown(badge("SYNTHETIC SCENARIO - not a real incident or facility", "b-sim"), unsafe_allow_html=True)
+
+
+def render_finding(f) -> None:
+    src = ""
+    if f.source_ids:
+        names = load_sources()
+        src = "<div class='small'>Sources: " + "; ".join(
+            esc(f"{sid} ({names[sid]['title']})") if sid in names else esc(sid) for sid in f.source_ids) + "</div>"
+    unc = ("<div class='small'><b>Uncertainties:</b> " + " ".join(esc(u) for u in f.uncertainties) + "</div>") if f.uncertainties else ""
+    nxt = f"<div class='small'><b>Next step:</b> {esc(f.next_step)}</div>" if f.next_step else ""
+    extra = ""
+    if f.extra.get("material_compatibility"):
+        extra += f"<div class='small'><b>Material compatibility:</b> {esc(f.extra['material_compatibility'])}</div>"
+    if f.extra.get("professional_processing"):
+        extra += f"<div class='small'><b>Professional processing needed:</b> {esc(f.extra['professional_processing'])}</div>"
+    cls = "emergency" if f.statement.startswith("EMERGENCY") else "remat-card"
+    st.markdown(f"<div class='{cls}'>{badge(f.label.value, LABEL_CLASS[f.label])}{esc(f.statement)}{extra}{unc}{nxt}{src}</div>",
+                unsafe_allow_html=True)
+
+
+# ------------------------------------------------------------------ pages
+def page_overview() -> None:
+    st.markdown('<div class="remat-hero"><h1>RE:MAT AI</h1>'
+                '<p><i>Every waste item deserves the right next decision — not just another report.</i></p></div>',
+                unsafe_allow_html=True)
+    st.write("RE:MAT AI investigates what to do with a waste item. A small decision model (Strands Decider 2B) "
+             "chooses which investigation tool to run next, a deterministic safety layer can overrule it, and every "
+             "finding is labelled as source-backed, hypothesis or unknown.")
+    c = st.columns(4)
+    for col, (t, d) in zip(c, [("RECOVER", "Investigate plausible reuse or recycling routes."),
+                               ("DISPOSE", "Point to authorized collection or disposal channels."),
+                               ("ESCALATE", "Refer unknown, hazardous or dangerous material to qualified people."),
+                               ("VERIFY", "Check the evidence and list what is missing.")]):
+        with col:
+            st.markdown(f"<div class='remat-card'><b>{t}</b><br><span class='small'>{d}</span></div>", unsafe_allow_html=True)
+    st.markdown("#### What it will not do")
+    st.markdown("- Invent facilities or claim that any facility is nearby, licensed or accepting your waste.\n"
+                "- Give do-it-yourself handling, dismantling, mixing, burning or neutralising instructions for hazardous material.\n"
+                "- Pretend that a photo was analyzed by AI (photo analysis is not implemented).\n"
+                "- Present simulated demo decisions as live Decider 2B or Bedrock results.")
+    st.button("Start an assessment", on_click=go, args=("Waste assessment",), type="primary")
+    st.button("Try a demo scenario", on_click=go, args=("Demo scenarios",))
+
+
+def page_assess() -> None:
+    st.header("Waste assessment")
+    if st.session_state.get("scenario_id"):
+        st.markdown(badge("SYNTHETIC SCENARIO LOADED - invented example data", "b-sim"), unsafe_allow_html=True)
+    left, right = st.columns([3, 2])
+    with left:
+        st.text_input("Waste name", key="f_name", placeholder="e.g. Rice straw, old laptops, unlabelled drum")
+        st.text_area("Description (what you can observe)", key="f_desc", height=110)
+        c1, c2 = st.columns(2)
+        c1.selectbox("Waste category (if known)", CATEGORIES, key="f_cat")
+        c2.text_input("Approximate location (town or district)", key="f_loc")
+        st.text_area("Known contamination or danger information", key="f_danger", height=80,
+                     placeholder="Leaks, labels, smells, mixing, damage... or 'none known'")
+        st.radio("Your objective", list(OBJECTIVES), key="f_obj", format_func=lambda k: OBJECTIVES[k], horizontal=True)
+    with right:
+        photo = st.file_uploader("Optional photo", type=["png", "jpg", "jpeg"], key="f_photo")
+        if photo is not None:
+            st.image(photo, use_container_width=True)
+            st.warning("Prototype notice: photo analysis is NOT implemented. This photo is not analyzed by any AI. "
+                       "It is only noted in the case.")
+            st.checkbox("I confirm this photo shows the item I described", key="f_photo_ok")
+        st.info("Never open, move or test unknown containers to answer these questions. Describe only what you can see from a safe distance.")
+
+    if st.button("Run assessment", type="primary"):
+        case = current_case()
+        with st.spinner("Investigating..."):
+            if mode == MODE_DEMO:
+                result = run_case(case, backend=None, max_steps=SETTINGS.max_steps)
+            else:
+                backend = HttpDeciderBackend(st.session_state["decider_url"], SETTINGS.decider_timeout_s,
+                                             SETTINGS.decider_model_field, SETTINGS.decider_api_key)
+                gen = BedrockGenerator(st.session_state["bedrock_model"], st.session_state["region"]) \
+                    if st.session_state["bedrock_model"] else None
+                result = run_case(case, backend=backend, generator=gen, max_steps=SETTINGS.max_steps)
+        st.session_state["result"] = result
+        if result.status == "invalid_input":
+            for e in result.errors:
+                st.error(e)
+        elif result.status == "decider_error":
+            st.error("The Decider could not be used, so no decision was made. " + " ".join(result.errors))
+            st.caption("Nothing was substituted: switch to Demo mode in the sidebar if you want to explore the app with simulated decisions.")
+        else:
+            st.success("Assessment complete.")
+            st.button("View recommendations", on_click=go, args=("Recommendations",))
+            st.button("View decision trace", on_click=go, args=("Decision trace",))
+
+
+def need_result() -> CaseResult | None:
+    r = st.session_state.get("result")
+    if r is None or r.status != "ok":
+        st.info("No completed assessment yet. Run one on the Waste assessment page, or load a demo scenario.")
+        st.button("Go to Waste assessment", on_click=go, args=("Waste assessment",))
+        return None
+    return r
+
+
+def page_recs() -> None:
+    st.header("Recovery & disposal recommendations")
+    r = need_result()
+    if not r:
+        return
+    mode_banner(r)
+    rec = r.recommendation
+    if rec.pathway.value == "ESCALATE":
+        st.markdown(f"<div class='emergency'>{esc(rec.headline)}</div>", unsafe_allow_html=True)
+    else:
+        st.subheader(rec.headline)
+    st.markdown("**Next steps**")
+    for s in rec.next_steps:
+        st.markdown(f"- {s}")
+    st.markdown("**Findings by investigation step**")
+    for step in r.steps:
+        if step.findings:
+            st.markdown(f"##### {step.executed_action.replace('_', ' ').title()}")
+            for f in step.findings:
+                render_finding(f)
+    if r.missing_info:
+        st.markdown("**Unknowns / missing information**")
+        for m in r.missing_info:
+            st.markdown(f"- {badge('UNKNOWN', 'b-unk')} {esc(m)}", unsafe_allow_html=True)
+    st.markdown("**Summary**")
+    if r.summary:
+        tag = "AI-GENERATED HYPOTHESIS" if r.summary.ai_generated else "NOT AI-GENERATED"
+        st.markdown(f"{badge(tag, 'b-hyp' if r.summary.ai_generated else 'b-unk')} <span class='small'>source: {esc(r.summary.source)}</span>",
+                    unsafe_allow_html=True)
+        st.write(r.summary.text)
+        if r.summary.note:
+            st.caption(r.summary.note)
+    for w in r.warnings:
+        st.warning(w)
+
+
+def page_trace() -> None:
+    st.header("Decision trace & evidence")
+    r = need_result()
+    if not r:
+        return
+    mode_banner(r)
+    st.markdown("**1. Waste information (as entered)**")
+    st.json({k: v for k, v in r.case.__dict__.items() if v not in ("", None, False)})
+    a = r.assessment
+    st.markdown("**2. Safety assessment and uncertainty**")
+    st.write(f"Level: `{a.level.value}` · Possible immediate danger: `{'yes' if a.emergency else 'no'}`")
+    for reason in a.reasons:
+        st.markdown(f"- {reason}")
+    for m in a.missing_info:
+        st.markdown(f"- {badge('UNKNOWN', 'b-unk')} {esc(m)}", unsafe_allow_html=True)
+    st.markdown("**3-5. Steps: options, selected action, executed tool, findings**")
+    for s in r.steps:
+        d, g = s.decision, s.guardrail
+        title = f"Step {s.step}: " + (f"Decider selected `{d.selected}`" if d else "no decision")
+        if g and not g.allowed:
+            title += f" → overridden by {g.rule_id} → ran `{g.final}`"
+        with st.expander(title, expanded=s.step == 1):
+            if d:
+                kind = "b-live" if d.live else "b-sim"
+                st.markdown(f"{badge('LIVE' if d.live else 'SIMULATED', kind)} {esc(d.backend)}", unsafe_allow_html=True)
+                st.write("**Available options:** " + ", ".join(f"`{o}`" for o in s.available_options))
+                st.write(f"**Selected by decision backend:** `{d.selected}`")
+                if d.confidence is not None:
+                    st.write(f"**Confidence returned by the Decider:** {d.confidence:.3f}")
+                else:
+                    st.caption("No confidence value was returned for this decision.")
+                if d.probabilities:
+                    st.write("**Per-option probabilities returned by the Decider:**")
+                    st.json(d.probabilities)
+                if d.latency_ms is not None:
+                    st.caption(f"Decider latency reported by server: {d.latency_ms} ms")
+                if d.selected_derived_from:
+                    st.caption("Note: " + d.selected_derived_from)
+                if d.rationale:
+                    st.caption(d.rationale)
+            if g:
+                if g.allowed:
+                    st.success("Safety guardrail: proposal allowed.")
+                else:
+                    st.error(f"Safety guardrail REJECTED `{g.proposed}` (rule {g.rule_id}): {g.reason} "
+                             f"Replaced by deterministic action `{g.final}` (this replacement is not a Decider decision).")
+            st.write(f"**Executed:** `{s.executed_action}` (chosen by: {s.executed_by})")
+            st.write("**Tool inputs:**")
+            st.json(s.tool_inputs)
+            if s.error:
+                st.error(s.error)
+            for f in s.findings:
+                render_finding(f)
+            with st.expander("State text sent to the decision backend"):
+                st.code(s.state_sent)
+            if d and d.live and d.raw_response is not None:
+                with st.expander("Raw Decider response"):
+                    st.code(json.dumps(d.raw_response, indent=2)[:6000])
+    st.markdown("**6. Final recommendation**")
+    st.write(r.recommendation.headline)
+    st.markdown("**7. Why other actions were not selected**")
+    if r.why_not_selected:
+        for w in r.why_not_selected:
+            st.markdown(f"- {w}")
+    else:
+        st.caption("No explanation is available from the decision data.")
+    st.markdown("**8. Next steps**")
+    for s in r.recommendation.next_steps:
+        st.markdown(f"- {s}")
+    st.download_button("Download trace as JSON", data=json.dumps(r.to_dict(), indent=2, default=str),
+                       file_name="remat_trace.json", mime="application/json")
+
+
+def page_scenarios() -> None:
+    st.header("Demo scenarios")
+    st.markdown(badge("ALL SCENARIOS ARE SYNTHETIC", "b-sim") + " They are invented examples, not real incidents, "
+                "locations or verified facilities.", unsafe_allow_html=True)
+    for sc in load_scenarios():
+        with st.container(border=True):
+            st.markdown(f"#### {sc['title']}")
+            st.write(sc["summary"])
+            st.caption("Expected behaviour: " + sc["expected_behavior"])
+            st.button("Load this scenario", key=f"load_{sc['id']}", on_click=load_scenario, args=(sc["id"],))
+
+
+def page_about() -> None:
+    st.header("About & methodology")
+    st.markdown("""
+**Decision pattern: tool selection.** At each step the Strands Decider 2B model answers one typed *choice* question
+("which investigation action should run next?") over a fixed option set. The chosen action decides which deterministic
+tool runs next.
+
+**Separation of duties.** The Decider proposes. A deterministic guardrail may reject or replace the proposal (for example,
+recovery is never investigated for unknown material, and possible emergencies are escalated first). Replacements are shown
+as safety overrides, never as Decider decisions.
+
+**Evidence labels.** `SOURCE-BACKED` = from the small curated dataset with a source pointer. `HYPOTHESIS` = AI-generated or
+suggested, not verified. `UNKNOWN` = missing information. `SAFETY RULE` = deterministic safety statement.
+
+**Generative step.** After the investigation, an Amazon Bedrock model (through the Strands Agents SDK) writes a short summary
+from the findings. It is labelled as an unverified hypothesis and discarded if the safety filter finds unsafe instructions.
+
+**Limits.** The dataset is small and India-focused. Source entries are pointers to public rules; clause-level wording was not
+verified by this project. No facility directory is included, so no facility is ever named. Photos are not analyzed. Matching is
+keyword-based and can be wrong. This is decision support, not professional advice.
+""")
+    st.markdown("#### Source registry")
+    for sid, s in load_sources().items():
+        st.markdown(f"- **{sid}**: {s['title']} ({s['authority']}). Date checked: {s.get('date_checked') or 'not checked'}. "
+                    f"Method: {s['check_method']}.")
+    st.markdown('<div class="emergency">In an emergency (leak, fumes, smoke, fire, swelling or exposure): move away if it is safe and '
+                'contact local emergency services immediately (112 in India).</div>', unsafe_allow_html=True)
+
+
+{"Overview": page_overview, "Waste assessment": page_assess, "Recommendations": page_recs,
+ "Decision trace": page_trace, "Demo scenarios": page_scenarios, "About & methodology": page_about}[st.session_state["page"]]()

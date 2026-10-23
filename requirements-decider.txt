@@ -1,0 +1,4 @@
+# Strands Decider 2B runs as a SEPARATE local server (strands-decider serve ...).
+# Installing it in its own virtual environment is recommended: it pulls in PyTorch/Transformers and
+# downloads a ~4.5 GB base model (Qwen3.5-2B-Base) on first use.
+strands-decider

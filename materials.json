@@ -1,0 +1,173 @@
+{
+  "_meta": {
+    "purpose": "Small curated reference dataset. Not a facility directory.",
+    "hazard_classes": {
+      "routine": "Ordinary stream; recovery can be investigated directly.",
+      "regulated": "Regulated stream; recovery and disposal only through authorized channels. No do-it-yourself processing.",
+      "unknown_high_risk": "Unidentified or high-risk material; recovery is blocked until a qualified person identifies it."
+    },
+    "evidence_levels": {
+      "regulation_pointer": "Backed by a named public rule or authority (clauses not verified by this project).",
+      "general_practice": "Widely described practice; check local availability and suitability."
+    }
+  },
+  "materials": [
+    {
+      "id": "agri_residue",
+      "name": "Agricultural residue (crop straw, husk, stubble, bagasse)",
+      "aliases": ["rice straw", "wheat straw", "paddy straw", "stubble", "crop residue", "husk", "rice husk", "bagasse", "sugarcane trash", "agricultural residue", "agri residue", "straw", "stalk", "stalks", "biomass"],
+      "category": "Agricultural residue",
+      "hazard_class": "routine",
+      "recovery_options": [
+        {
+          "option": "In-situ management (incorporate or manage residue in the field using suitable machinery)",
+          "compatibility": "Depends on crop, soil moisture and the time before the next sowing.",
+          "professional_processing": "Machinery access (own, custom-hire or cooperative).",
+          "source_ids": ["SRC_NPMCR_2014", "SRC_LOCAL_AGRI"],
+          "evidence_level": "regulation_pointer",
+          "uncertainties": ["Machinery availability and any subsidy schemes differ by state and year."],
+          "next_step": "Ask the district agriculture office or nearest KVK which machinery and schemes are currently available."
+        },
+        {
+          "option": "Ex-situ use (collect and supply to biomass users such as pellet, briquette or energy units)",
+          "compatibility": "Needs bales or loose residue with low moisture and a nearby buyer.",
+          "professional_processing": "Baling equipment and an off-taker that accepts the residue.",
+          "source_ids": ["SRC_NPMCR_2014", "SRC_LOCAL_AGRI"],
+          "evidence_level": "general_practice",
+          "uncertainties": ["No buyer is verified by this app.", "Price and demand vary by season and location."],
+          "next_step": "Ask the local agriculture office for the names of currently operating residue buyers, then confirm with each directly."
+        },
+        {
+          "option": "Composting or mulching (hypothesis for small quantities)",
+          "compatibility": "Better for small quantities of clean residue with no chemical contamination.",
+          "professional_processing": "None for small quantities; larger volumes need planning and space.",
+          "source_ids": ["SRC_LOCAL_AGRI"],
+          "evidence_level": "general_practice",
+          "uncertainties": ["Suitability varies by crop type and the climate."],
+          "next_step": "Confirm suitability with a KVK before committing large volumes."
+        }
+      ],
+      "disposal_pathways": [
+        {
+          "pathway": "Do not burn in the open. Use one of the recovery routes or the local municipal or agricultural collection arrangement.",
+          "authority": "Local agriculture office / State Pollution Control Board",
+          "source_ids": ["SRC_NPMCR_2014", "SRC_SPCB", "SRC_LOCAL_AGRI"],
+          "evidence_level": "general_practice",
+          "uncertainties": ["Open-burning rules and penalties are set locally; confirm the current rule for your state."],
+          "next_step": "Check your state's current rule on crop residue burning with the district agriculture office."
+        }
+      ]
+    },
+    {
+      "id": "ewaste",
+      "name": "Electronic waste (computers, phones, chargers, cables)",
+      "aliases": ["e-waste", "ewaste", "electronic waste", "electronics", "laptop", "laptops", "desktop", "pc", "computer", "computers", "keyboard", "keyboards", "monitor", "monitors", "mobile phone", "smartphone", "charger", "chargers", "cable", "cables", "printer", "circuit board", "television", "tv", "router"],
+      "category": "Electronic waste",
+      "hazard_class": "regulated",
+      "recovery_options": [
+        {
+          "option": "Reuse or refurbishment through a registered refurbisher or a manufacturer or retailer program",
+          "compatibility": "Working or repairable devices only; data must be wiped by the owner first.",
+          "professional_processing": "Registered refurbisher or producer program.",
+          "source_ids": ["SRC_EWASTE_RULES_2022", "SRC_CPCB"],
+          "evidence_level": "regulation_pointer",
+          "uncertainties": ["Whether a registered refurbisher operates near you is NOT verified by this app."],
+          "next_step": "Look up registered entities on the CPCB site or ask the device's producer about its take-back option."
+        },
+        {
+          "option": "Material recovery through a registered e-waste recycler",
+          "compatibility": "Non-working devices and accessories; recyclers decide what they accept.",
+          "professional_processing": "Authorized e-waste recovery facility.",
+          "source_ids": ["SRC_EWASTE_RULES_2022", "SRC_CPCB", "SRC_SPCB"],
+          "evidence_level": "regulation_pointer",
+          "uncertainties": ["Acceptance of a specific item or quantity is NOT verified by this app."],
+          "next_step": "Contact a recycler from the official registered list and confirm what it accepts before transporting anything."
+        }
+      ],
+      "disposal_pathways": [
+        {
+          "pathway": "Hand over to a producer take-back point or an authorized e-waste collection channel. Do not dismantle, burn or dump.",
+          "authority": "Producer / registered collector or recycler; regulator is CPCB and the State Pollution Control Board",
+          "source_ids": ["SRC_EWASTE_RULES_2022", "SRC_CPCB", "SRC_SPCB"],
+          "evidence_level": "regulation_pointer",
+          "uncertainties": ["No specific collection point is verified by this app."],
+          "next_step": "Find authorized collection points through the producer or the State Pollution Control Board."
+        }
+      ]
+    },
+    {
+      "id": "battery",
+      "name": "Batteries (including lithium-ion)",
+      "aliases": ["battery", "batteries", "lithium", "lithium-ion", "li-ion", "lead acid", "lead-acid", "power bank", "powerbank", "cell", "ups battery", "inverter battery"],
+      "category": "Batteries",
+      "hazard_class": "regulated",
+      "recovery_options": [
+        {
+          "option": "Return through the producer or an authorized battery collection and recycling channel",
+          "compatibility": "Intact batteries; damaged, swollen or leaking batteries need professional handling.",
+          "professional_processing": "Authorized battery recycler.",
+          "source_ids": ["SRC_BATTERY_RULES_2022", "SRC_CPCB"],
+          "evidence_level": "regulation_pointer",
+          "uncertainties": ["Whether a particular recycler accepts your battery type and quantity is NOT verified by this app."],
+          "next_step": "Ask the battery's seller or producer about take-back, or use the official registered list."
+        }
+      ],
+      "disposal_pathways": [
+        {
+          "pathway": "Use producer take-back or an authorized collection point. Do not open, puncture, burn or throw in general waste.",
+          "authority": "Producer / authorized collector; regulator is CPCB and the State Pollution Control Board",
+          "source_ids": ["SRC_BATTERY_RULES_2022", "SRC_CPCB", "SRC_SPCB"],
+          "evidence_level": "regulation_pointer",
+          "uncertainties": ["No specific collection point is verified by this app."],
+          "next_step": "Ask the seller or producer, or check the State Pollution Control Board for authorized collectors."
+        }
+      ]
+    },
+    {
+      "id": "used_oil",
+      "name": "Used oil (engine, gear or hydraulic oil)",
+      "aliases": ["used oil", "waste oil", "engine oil", "used engine oil", "lubricant", "lubricating oil", "gear oil", "hydraulic oil", "mobil", "motor oil", "spent oil"],
+      "category": "Used oil / industrial waste",
+      "hazard_class": "regulated",
+      "recovery_options": [
+        {
+          "option": "Re-refining or other recovery by an authorized used-oil recycler",
+          "compatibility": "Used oil kept separate from solvents, water and other waste is generally easier to recover; the recycler decides acceptance.",
+          "professional_processing": "Authorized (registered) used-oil recycler or re-refiner.",
+          "source_ids": ["SRC_HOWM_RULES_2016", "SRC_CPCB", "SRC_SPCB"],
+          "evidence_level": "regulation_pointer",
+          "uncertainties": ["Whether an authorized recycler serves your area is NOT verified by this app.", "Contaminated oil may be refused or handled differently."],
+          "next_step": "Ask the State Pollution Control Board for authorized used-oil recyclers and confirm acceptance and transport before moving the oil."
+        }
+      ],
+      "disposal_pathways": [
+        {
+          "pathway": "Hand over only to an authorized used-oil handler. Never pour on ground or into drains, and do not burn.",
+          "authority": "Authorized recycler; regulator is the State Pollution Control Board",
+          "source_ids": ["SRC_HOWM_RULES_2016", "SRC_CPCB", "SRC_SPCB"],
+          "evidence_level": "regulation_pointer",
+          "uncertainties": ["No specific handler is verified by this app."],
+          "next_step": "Keep the oil in its sealed, labelled container and contact the State Pollution Control Board for authorized handlers."
+        }
+      ]
+    },
+    {
+      "id": "unknown_chemical",
+      "name": "Unknown or unlabelled chemical waste",
+      "aliases": ["unknown chemical", "unlabelled", "unlabeled", "unmarked", "chemical drum", "chemical container", "chemical waste", "solvent", "acid", "pesticide", "reagent", "paint thinner", "industrial chemical", "barrel", "drum", "carboy", "mystery"],
+      "category": "Unknown or potentially hazardous chemical waste",
+      "hazard_class": "unknown_high_risk",
+      "recovery_options": [],
+      "disposal_pathways": [
+        {
+          "pathway": "Do not handle, open, mix, move or test the contents. Keep people away and refer to the State Pollution Control Board or a qualified hazardous-waste professional for identification and authorized handling.",
+          "authority": "State Pollution Control Board; qualified hazardous-waste professional; local emergency services if there is immediate danger",
+          "source_ids": ["SRC_HOWM_RULES_2016", "SRC_SPCB", "SRC_EMERGENCY"],
+          "evidence_level": "regulation_pointer",
+          "uncertainties": ["The contents are unknown, so no recovery or treatment route can be assessed."],
+          "next_step": "Contact the State Pollution Control Board or a qualified professional and describe what you can see from a safe distance."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "_meta": {
+    "notice": "ALL SCENARIOS ARE SYNTHETIC. They are invented examples for exploring the app. They are not real incidents, real locations or verified facilities."
+  },
+  "scenarios": [
+    {
+      "id": "ewaste",
+      "title": "Electronic waste",
+      "synthetic": true,
+      "summary": "Retired lab computers and loose phone batteries, objective: investigate both recovery and disposal.",
+      "expected_behavior": "Regulated stream: recovery is investigated through authorized channels only, with a disposal check.",
+      "case": {
+        "waste_name": "Retired desktop PCs, keyboards and loose phone batteries",
+        "description": "About 12 old desktop computers, keyboards and a bag of loose phone batteries from a school computer lab. No damage reported.",
+        "category": "Electronic waste",
+        "location": "Example District (synthetic)",
+        "danger_info": "No leaks or swelling reported.",
+        "objective": "both"
+      }
+    },
+    {
+      "id": "agri",
+      "title": "Agricultural residue",
+      "synthetic": true,
+      "summary": "Rice straw after harvest, objective: recover value.",
+      "expected_behavior": "Routine stream: recovery options are investigated.",
+      "case": {
+        "waste_name": "Rice straw",
+        "description": "Rice straw left after harvest on a two-acre field. Dry and clean.",
+        "category": "Agricultural residue",
+        "location": "Example Village (synthetic)",
+        "danger_info": "No chemical contamination known.",
+        "objective": "recover"
+      }
+    },
+    {
+      "id": "used_oil",
+      "title": "Used industrial oil",
+      "synthetic": true,
+      "summary": "Used engine oil in sealed drums, objective: dispose safely.",
+      "expected_behavior": "Regulated stream: authorized disposal pathway is checked.",
+      "case": {
+        "waste_name": "Used engine oil",
+        "description": "About 40 litres of used engine oil from a small garage, stored in sealed labelled drums.",
+        "category": "Used oil / industrial waste",
+        "location": "Example Town (synthetic)",
+        "danger_info": "Not mixed with other liquids as far as the owner knows.",
+        "objective": "dispose"
+      }
+    },
+    {
+      "id": "unknown_chemical",
+      "title": "Unknown chemical container",
+      "synthetic": true,
+      "summary": "Unlabelled drum, user hopes to recover value. The safety guardrail should block recovery and escalate.",
+      "expected_behavior": "High-risk: recovery is blocked by the guardrail; the case is escalated to qualified assessment.",
+      "case": {
+        "waste_name": "Unlabelled blue drum",
+        "description": "An unlabelled blue plastic drum found behind a workshop. Contents unknown.",
+        "category": "",
+        "location": "Example Industrial Area (synthetic)",
+        "danger_info": "Unlabelled. Faint chemical smell reported by a passer-by.",
+        "objective": "recover"
+      }
+    },
+    {
+      "id": "battery_emergency",
+      "title": "Leaking battery (emergency wording)",
+      "synthetic": true,
+      "summary": "A battery pack that is swollen and leaking, to show the emergency path.",
+      "expected_behavior": "Emergency flag: immediate escalation with an emergency warning.",
+      "case": {
+        "waste_name": "Swollen power bank",
+        "description": "A power bank with a swollen casing that is leaking liquid and giving off fumes.",
+        "category": "Batteries",
+        "location": "Example City (synthetic)",
+        "danger_info": "Swollen, leaking, fumes noticed.",
+        "objective": "dispose"
+      }
+    }
+  ]
+}
