@@ -1,14 +1,23 @@
+"""Decision backends: live Decider client and clearly labelled simulation.
 
-"""Decision backends: real Decider client and clearly labelled simulation.
-
-Hosted endpoint:
+Hosted API:
     POST https://<host>/v1/decide
 
-Local Strands Decider:
+Local API:
     POST http://127.0.0.1:8000/v1/systemone
 
-The hosted API must support the request format documented by its provider.
-The simulation is not a real AI model.
+The hosted endpoint in this project returned a validation error indicating
+that its request schema expects NoulQuestion objects (type="noul", criteria
+keys "true"/"false"), while the original client sent a multi-option "choice"
+question. This client therefore uses a sequence of binary Noul questions for
+hosted requests. It interprets the response conservatively: if the server
+does not return a usable true/false answer, it raises an error rather than
+inventing a decision.
+
+Note: a sequence of binary questions is not equivalent to a true multi-class
+choice model. Verify the hosted endpoint's documented response format before
+using this for real-world waste handling decisions. Never treat this app as
+a substitute for a qualified waste-management or hazardous-materials expert.
 """
 from __future__ import annotations
 
@@ -69,56 +78,35 @@ class DeciderBackend(Protocol):
     name: str
     live: bool
 
-    def choose(
-        self, state: str, options: list[str]
-    ) -> DeciderDecision: ...
+    def choose(self, state: str, options: list[str]) -> DeciderDecision: ...
 
-
-# ------------------------------------------------------------------
-# Build the decision state
-# ------------------------------------------------------------------
 
 def build_state(
     case: WasteCase,
     assessment: SafetyAssessment,
     history: list[tuple[str, int]],
 ) -> str:
-    """Build a plain-text description containing known case information."""
+    """Build a plain-text description of the case and current investigation."""
     lines = [
         "WASTE CASE (user-provided, unverified)",
         f"Item: {case.waste_name or '(not given)'}",
-    ]
-
-    if case.description:
-        lines.append(f"Description: {case.description}")
-
-    lines.extend([
+        f"Description: {case.description or '(not given)'}",
         f"Category stated by user: {case.category or '(not given)'}",
         f"Location: {case.location or '(not given)'}",
-        (
-            "Danger or contamination information: "
-            f"{case.danger_info or '(none given)'}"
-        ),
+        f"Danger or contamination information: {case.danger_info or '(none given)'}",
         f"User objective: {case.objective}",
-    ])
+    ]
 
-    if case.photo_attached:
-        lines.append(
-            "Photo: attached but NOT analyzed by any AI model."
-        )
+    if getattr(case, "photo_attached", False):
+        lines.append("Photo: attached but not analyzed by this backend.")
 
     lines.extend([
         "",
         "DETERMINISTIC SAFETY ASSESSMENT",
         f"Level: {assessment.level.value}",
-        (
-            "Possible immediate danger: "
-            f"{'yes' if assessment.emergency else 'no'}"
-        ),
+        f"Possible immediate danger: {'yes' if assessment.emergency else 'no'}",
     ])
-
-    for reason in assessment.reasons:
-        lines.append(f"- {reason}")
+    lines.extend(f"- {reason}" for reason in assessment.reasons)
 
     lines.extend([
         f"Missing information items: {len(assessment.missing_info)}",
@@ -130,53 +118,22 @@ def build_state(
         lines.append("Nothing has been investigated yet.")
 
     for action, finding_count in history:
-        lines.append(
-            f"- {action}: {finding_count} finding(s) recorded"
-        )
+        lines.append(f"- {action}: {finding_count} finding(s) recorded")
 
     return "\n".join(lines)
 
 
-# ------------------------------------------------------------------
-# Parse a choice returned by the server
-# ------------------------------------------------------------------
-
-_SELECTED_KEYS = (
-    "choice",
-    "selected",
-    "label",
-    "option",
-    "answer",
-    "top",
-    "value",
-    "prediction",
-    "predicted",
-)
-
-_PROB_KEYS = (
-    "probabilities",
-    "probs",
-    "distribution",
-    "scores",
-    "options",
-)
-
-
-def _match_option(
-    value: Any, options: list[str]
-) -> Optional[str]:
+def _match_option(value: Any, options: list[str]) -> Optional[str]:
     if isinstance(value, str):
+        cleaned = value.strip().lower()
         for option in options:
-            if value.strip().lower() == option.lower():
+            if cleaned == option.lower():
                 return option
-
     return None
 
 
-def parse_choice_answer(
-    answer: Any, options: list[str]
-) -> dict[str, Any]:
-    """Extract a selected option and optional confidence/probabilities."""
+def parse_choice_answer(answer: Any, options: list[str]) -> dict[str, Any]:
+    """Parse common multi-choice answer shapes returned by a Decider."""
     selected: Optional[str] = None
     confidence: Optional[float] = None
     probabilities: Optional[dict[str, float]] = None
@@ -186,59 +143,42 @@ def parse_choice_answer(
         selected = _match_option(answer, options)
 
     elif isinstance(answer, dict):
-        inner = (
-            answer["result"]
-            if isinstance(answer.get("result"), dict)
-            else answer
-        )
+        inner = answer.get("result")
+        if not isinstance(inner, dict):
+            inner = answer
 
-        for key in _SELECTED_KEYS:
+        for key in (
+            "choice", "selected", "label", "option", "answer",
+            "top", "value", "prediction", "predicted",
+        ):
             if key in inner:
                 selected = _match_option(inner[key], options)
                 if selected is not None:
                     break
 
         raw_confidence = inner.get("confidence")
-        if (
-            isinstance(raw_confidence, (int, float))
-            and not isinstance(raw_confidence, bool)
-        ):
+        if isinstance(raw_confidence, (int, float)) and not isinstance(raw_confidence, bool):
             confidence = float(raw_confidence)
 
-        for key in _PROB_KEYS:
+        for key in ("probabilities", "probs", "distribution", "scores", "options"):
             candidate = inner.get(key)
-
-            if isinstance(candidate, dict) and candidate:
+            if isinstance(candidate, dict):
                 parsed: dict[str, float] = {}
-
                 for label, value in candidate.items():
                     option = _match_option(label, options)
-
-                    if (
-                        option is not None
-                        and isinstance(value, (int, float))
-                        and not isinstance(value, bool)
-                    ):
+                    if option is not None and isinstance(value, (int, float)) and not isinstance(value, bool):
                         parsed[option] = float(value)
-
                 if parsed:
                     probabilities = parsed
                     break
 
         if selected is None and probabilities:
-            selected = max(
-                probabilities,
-                key=probabilities.get,
-            )
-            derived_from = (
-                "Selected from the probabilities returned by "
-                "the server; no explicit selected field was found."
-            )
+            selected = max(probabilities, key=probabilities.get)
+            derived_from = "Selected from the probability distribution in the response."
 
     if selected is None:
         raise DeciderResponseError(
-            "Could not determine the selected option from "
-            "the Decider response.",
+            "Could not determine the selected option from the Decider response.",
             raw=answer,
         )
 
@@ -250,12 +190,44 @@ def parse_choice_answer(
     }
 
 
-# ------------------------------------------------------------------
-# Real HTTP backend
-# ------------------------------------------------------------------
+def _parse_bool(answer: Any) -> Optional[bool]:
+    """Interpret common yes/no answer structures without guessing."""
+    if isinstance(answer, bool):
+        return answer
+
+    if isinstance(answer, str):
+        value = answer.strip().lower()
+        if value in {"true", "yes", "1"}:
+            return True
+        if value in {"false", "no", "0"}:
+            return False
+
+    if isinstance(answer, dict):
+        inner = answer.get("result", answer)
+
+        if isinstance(inner, bool):
+            return inner
+        if isinstance(inner, str):
+            return _parse_bool(inner)
+        if isinstance(inner, dict):
+            for key in ("answer", "value", "prediction", "selected", "label"):
+                if key in inner:
+                    result = _parse_bool(inner[key])
+                    if result is not None:
+                        return result
+
+            # A few response formats return a true/false score map.
+            if "true" in inner and "false" in inner:
+                true_value = inner["true"]
+                false_value = inner["false"]
+                if isinstance(true_value, (int, float)) and isinstance(false_value, (int, float)):
+                    return true_value > false_value
+
+    return None
+
 
 class HttpDeciderBackend:
-    """HTTP client for a local or hosted Decider service."""
+    """HTTP client for local or hosted Decider services."""
 
     name = "Strands Decider 2B (live)"
     live = True
@@ -271,11 +243,7 @@ class HttpDeciderBackend:
         self.timeout_s = timeout_s
         self.model_field = model_field.strip()
         self.api_key = api_key.strip()
-
-        self.hosted = (
-            self.base_url.lower().startswith("https://")
-            or bool(self.api_key)
-        )
+        self.hosted = self.base_url.lower().startswith("https://") or bool(self.api_key)
 
         if self.hosted:
             self.endpoint = "/v1/decide"
@@ -289,227 +257,182 @@ class HttpDeciderBackend:
             "Accept": "application/json",
             "User-Agent": "REMAT-AI/1.0",
         }
-
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-
         return headers
 
     def health(self) -> dict[str, Any]:
-        """Check /health and distinguish HTTP rejection from connection errors."""
         request = urllib.request.Request(
             self.base_url + "/health",
             headers=self._headers(),
             method="GET",
         )
-
         try:
-            with urllib.request.urlopen(
-                request,
-                timeout=min(self.timeout_s, 10),
-            ) as response:
-                raw_text = response.read().decode(
-                    "utf-8", "replace"
-                )
-
-                try:
-                    result = json.loads(raw_text)
-                except ValueError as exc:
-                    raise DeciderResponseError(
-                        "Health endpoint returned invalid JSON.",
-                        raw=raw_text[:1000],
-                    ) from exc
-
-                if not isinstance(result, dict):
-                    raise DeciderResponseError(
-                        "Health endpoint did not return a JSON object.",
-                        raw=result,
-                    )
-
-                return result
-
+            with urllib.request.urlopen(request, timeout=min(self.timeout_s, 10)) as response:
+                text = response.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as exc:
-            detail = exc.read().decode(
-                "utf-8", "replace"
-            )[:500]
-
+            detail = exc.read().decode("utf-8", "replace")[:500]
             raise DeciderResponseError(
-                f"Health check returned HTTP {exc.code}. "
-                f"{detail or 'No error details supplied.'}",
+                f"Health check returned HTTP {exc.code}. {detail}",
                 raw={"status": exc.code, "body": detail},
             ) from exc
-
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise DeciderUnavailable(
-                f"Cannot connect to Decider at {self.base_url}: "
-                f"{exc}"
-            ) from exc
+            raise DeciderUnavailable(f"Cannot connect to Decider at {self.base_url}: {exc}") from exc
 
-    def request_body(
-        self, state: str, options: list[str]
-    ) -> dict[str, Any]:
-        unknown_options = [
-            option
-            for option in options
-            if option not in ACTION_CRITERIA
-        ]
+        try:
+            data = json.loads(text)
+        except ValueError as exc:
+            raise DeciderResponseError("Health endpoint returned invalid JSON.", raw=text[:1000]) from exc
+        if not isinstance(data, dict):
+            raise DeciderResponseError("Health endpoint did not return a JSON object.", raw=data)
+        return data
 
-        if unknown_options:
-            raise ValueError(
-                f"Unknown decision options: {unknown_options}"
-            )
+    def request_body(self, state: str, options: list[str]) -> dict[str, Any]:
+        unknown = [option for option in options if option not in ACTION_CRITERIA]
+        if unknown:
+            raise ValueError(f"Unknown decision options: {unknown}")
+        if not options:
+            raise ValueError("At least one decision option is required.")
 
-        body: dict[str, Any] = {
-            "state": state,
-            "questions": {
+        if not self.hosted:
+            questions: dict[str, Any] = {
                 self.question_name: {
                     "type": "choice",
                     "instructions": QUESTION_TEXT,
+                    "criteria": {option: ACTION_CRITERIA[option] for option in options},
+                }
+            }
+        else:
+            # A single Noul question is binary, so ask about each candidate.
+            # We require an explicit true answer and never silently pick a
+            # candidate if the response cannot be interpreted.
+            questions = {}
+            for index, option in enumerate(options, start=1):
+                questions[f"action_{index}"] = {
+                    "type": "noul",
+                    "instructions": (
+                        "Determine whether this is the single best next action "
+                        "for the waste case. Answer true only if it is the best "
+                        "next action; otherwise answer false.\n"
+                        f"Candidate action: {option}\n"
+                        f"Description: {ACTION_CRITERIA[option]}\n"
+                        f"Other available actions: {', '.join(o for o in options if o != option)}"
+                    ),
                     "criteria": {
-                        option: ACTION_CRITERIA[option]
-                        for option in options
+                        "true": f"{option} is the best next action.",
+                        "false": f"{option} is not the best next action.",
                     },
                 }
-            },
-        }
 
+        body: dict[str, Any] = {"state": state, "questions": questions}
         if self.model_field:
             body["model"] = self.model_field
-
         return body
 
-    def choose(
-        self, state: str, options: list[str]
-    ) -> DeciderDecision:
+    def choose(self, state: str, options: list[str]) -> DeciderDecision:
         if not options:
-            raise ValueError(
-                "At least one decision option is required."
-            )
+            raise ValueError("At least one decision option is required.")
 
-        body = json.dumps(
-            self.request_body(state, options)
-        ).encode("utf-8")
-
+        request_data = json.dumps(self.request_body(state, options)).encode("utf-8")
         headers = self._headers()
         headers["Content-Type"] = "application/json"
-
         request = urllib.request.Request(
             self.base_url + self.endpoint,
-            data=body,
-            method="POST",
+            data=request_data,
             headers=headers,
+            method="POST",
         )
 
         try:
-            with urllib.request.urlopen(
-                request,
-                timeout=self.timeout_s,
-            ) as response:
-                response_text = response.read().decode(
-                    "utf-8", "replace"
-                )
-
+            with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
+                response_text = response.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as exc:
-            # Do not expose request headers or the API key.
-            detail = exc.read().decode(
-                "utf-8", "replace"
-            )[:500]
-
+            detail = exc.read().decode("utf-8", "replace")[:1500]
             raise DeciderResponseError(
-                f"Decision request returned HTTP {exc.code}. "
-                f"{detail or 'The server supplied no details.'}",
-                raw={
-                    "status": exc.code,
-                    "body": detail,
-                },
+                f"Decision request returned HTTP {exc.code}. {detail or 'No details supplied.'}",
+                raw={"status": exc.code, "body": detail},
             ) from exc
-
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise DeciderUnavailable(
-                f"Cannot connect to Decider at {self.base_url}: "
-                f"{exc}"
-            ) from exc
+            raise DeciderUnavailable(f"Cannot connect to Decider at {self.base_url}: {exc}") from exc
 
         try:
             raw = json.loads(response_text)
         except ValueError as exc:
-            raise DeciderResponseError(
-                "Decider server returned invalid JSON.",
-                raw=response_text[:1000],
-            ) from exc
+            raise DeciderResponseError("Decider server returned invalid JSON.", raw=response_text[:1000]) from exc
 
-        if not isinstance(raw, dict):
-            raise DeciderResponseError(
-                "Decider response is not a JSON object.",
-                raw=raw,
-            )
+        if not isinstance(raw, dict) or not isinstance(raw.get("answers"), dict):
+            raise DeciderResponseError("Decider response has no answers object.", raw=raw)
 
-        answers = raw.get("answers")
-
-        if not isinstance(answers, dict):
-            raise DeciderResponseError(
-                "Decider response has no answers object.",
-                raw=raw,
-            )
-
-        answer = answers.get(self.question_name)
-
-        if answer is None:
-            answer = answers.get(LOCAL_QUESTION_NAME)
-
-        if answer is None:
-            answer = answers.get(HOSTED_QUESTION_NAME)
-
-        if answer is None:
-            raise DeciderResponseError(
-                "Decider response has no answer for the question.",
-                raw=raw,
-            )
-
-        parsed = parse_choice_answer(answer, options)
-
-        latency = raw.get("latency_ms")
-        model_name = (
-            raw.get("model")
-            if isinstance(raw.get("model"), str)
-            else ""
-        )
+        answers = raw["answers"]
 
         if self.hosted:
-            backend_name = (
-                f"Strands Decider (hosted: {model_name})"
-                if model_name
-                else "Strands Decider (hosted endpoint)"
-            )
+            true_options: list[str] = []
+            unknown: dict[str, Any] = {}
+
+            for index, option in enumerate(options, start=1):
+                question_key = f"action_{index}"
+                if question_key not in answers:
+                    unknown[question_key] = "(missing answer)"
+                    continue
+                value = _parse_bool(answers[question_key])
+                if value is True:
+                    true_options.append(option)
+                elif value is None:
+                    unknown[question_key] = answers[question_key]
+
+            if unknown:
+                raise DeciderResponseError(
+                    "Hosted Decider response did not contain interpretable true/false answers.",
+                    raw={"answers": answers, "unparsed": unknown},
+                )
+            if len(true_options) != 1:
+                raise DeciderResponseError(
+                    "Hosted Decider did not mark exactly one action true. "
+                    "No live decision was made.",
+                    raw={"true_options": true_options, "answers": answers},
+                )
+
+            selected = true_options[0]
+            confidence = None
+            probabilities = None
+            derived_from = "The sole action marked true by hosted Noul responses."
         else:
-            backend_name = (
-                f"Strands Decider (local: {model_name})"
-                if model_name
-                else "Strands Decider 2B (live, local server)"
-            )
+            answer = answers.get(self.question_name)
+            if answer is None:
+                raise DeciderResponseError(
+                    f"Decider response has no answer for '{self.question_name}'.",
+                    raw=raw,
+                )
+            parsed = parse_choice_answer(answer, options)
+            selected = parsed["selected"]
+            confidence = parsed["confidence"]
+            probabilities = parsed["probabilities"]
+            derived_from = parsed["derived_from"]
+
+        latency = raw.get("latency_ms")
+        model_name = raw.get("model") if isinstance(raw.get("model"), str) else ""
+        if self.hosted:
+            backend_name = f"Strands Decider (hosted: {model_name})" if model_name else "Strands Decider (hosted endpoint)"
+        else:
+            backend_name = f"Strands Decider (local: {model_name})" if model_name else "Strands Decider 2B (live, local server)"
 
         return DeciderDecision(
             backend=backend_name,
             live=True,
             question=QUESTION_TEXT,
             options=list(options),
-            selected=parsed["selected"],
-            confidence=parsed["confidence"],
-            probabilities=parsed["probabilities"],
+            selected=selected,
+            confidence=confidence,
+            probabilities=probabilities,
             latency_ms=(
                 float(latency)
-                if isinstance(latency, (int, float))
-                and not isinstance(latency, bool)
+                if isinstance(latency, (int, float)) and not isinstance(latency, bool)
                 else None
             ),
-            selected_derived_from=parsed["derived_from"],
+            selected_derived_from=derived_from,
             raw_response=raw,
         )
 
-
-# ------------------------------------------------------------------
-# Simulation backend — never represented as a real model
-# ------------------------------------------------------------------
 
 class SimulatedDeciderBackend:
     """Deterministic demonstration rules, not a machine-learning model."""
@@ -517,61 +440,44 @@ class SimulatedDeciderBackend:
     name = "SIMULATED rules (not Strands Decider 2B)"
     live = False
 
-    def __init__(
-        self,
-        case: WasteCase,
-        assessment: SafetyAssessment,
-    ):
+    def __init__(self, case: WasteCase, assessment: SafetyAssessment):
         self.case = case
         self.assessment = assessment
 
-    def choose(
-        self, state: str, options: list[str]
-    ) -> DeciderDecision:
+    def choose(self, state: str, options: list[str]) -> DeciderDecision:
         if not options:
-            raise ValueError(
-                "At least one decision option is required."
-            )
+            raise ValueError("At least one decision option is required.")
 
         objective = self.case.objective
-
         if objective == "recover":
             order = [
-                "investigate_recovery",
-                "check_disposal",
-                "check_evidence",
-                "request_info",
-                "conclude",
+                Action.INVESTIGATE_RECOVERY.value,
+                Action.CHECK_DISPOSAL.value,
+                Action.CHECK_EVIDENCE.value,
+                Action.REQUEST_INFO.value,
+                Action.CONCLUDE.value,
             ]
         elif objective == "dispose":
             order = [
-                "check_disposal",
-                "check_evidence",
-                "investigate_recovery",
-                "request_info",
-                "conclude",
+                Action.CHECK_DISPOSAL.value,
+                Action.CHECK_EVIDENCE.value,
+                Action.INVESTIGATE_RECOVERY.value,
+                Action.REQUEST_INFO.value,
+                Action.CONCLUDE.value,
             ]
         else:
             order = [
-                "investigate_recovery",
-                "check_disposal",
-                "check_evidence",
-                "request_info",
-                "conclude",
+                Action.INVESTIGATE_RECOVERY.value,
+                Action.CHECK_DISPOSAL.value,
+                Action.CHECK_EVIDENCE.value,
+                Action.REQUEST_INFO.value,
+                Action.CONCLUDE.value,
             ]
 
-        if self.assessment.emergency:
-            order = ["escalate"] + order
-        elif (
-            self.assessment.level == Level.HIGH_RISK
-            and objective != "recover"
-        ):
-            order = ["escalate"] + order
+        if self.assessment.emergency or self.assessment.level == Level.HIGH_RISK:
+            order = [Action.ESCALATE.value] + order
 
-        selected = next(
-            (option for option in order if option in options),
-            options[0],
-        )
+        selected = next((option for option in order if option in options), options[0])
 
         return DeciderDecision(
             backend=self.name,
@@ -580,7 +486,7 @@ class SimulatedDeciderBackend:
             options=list(options),
             selected=selected,
             rationale=(
-                "Simulated fixed-order rules based on the user's "
-                "objective. No AI model was run."
+                "Simulated fixed-order rules based on the user's objective. "
+                "No AI model was run."
             ),
         )
