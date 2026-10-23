@@ -6,6 +6,21 @@ from tools.disposal import EMERGENCY_WARNING
 from tools.material_lookup import get_material, load_sources
 
 
+def _relevant_source_ids(material: dict, option_lists: list[list[dict]]) -> list[str]:
+    """Return only source IDs relevant to this material's listed evidence."""
+    source_ids = sorted({
+        sid
+        for options in option_lists
+        for option in options
+        for sid in option.get("source_ids", [])
+    })
+    if material.get("id") == "agri_residue":
+        # In this app's source registry, these citations describe hazardous
+        # waste, e-waste and used-oil authorization, not crop-residue handling.
+        source_ids = [sid for sid in source_ids if sid not in {"SRC_CPCB", "SRC_SPCB"}]
+    return source_ids
+
+
 def check_evidence(case: WasteCase, assessment: SafetyAssessment, prior_findings: list[Finding]) -> list[Finding]:
     """Audit what the investigation has so far: which statements have sources, what is unknown."""
     sources = load_sources()
@@ -23,8 +38,10 @@ def check_evidence(case: WasteCase, assessment: SafetyAssessment, prior_findings
             statement=f"Matched reference material: {material['name']} (terms: {', '.join(assessment.matched_terms)}). "
                       "The match is keyword-based and should be confirmed by you.",
             label=Label.REFERENCE,
-            source_ids=sorted({s for opt in material.get("recovery_options", []) + material.get("disposal_pathways", [])
-                               for s in opt.get("source_ids", [])}),
+            source_ids=_relevant_source_ids(
+                material,
+                [material.get("recovery_options", []), material.get("disposal_pathways", [])],
+            ),
             uncertainties=["Keyword matching can be wrong; confirm that the description fits the reference material."],
         ))
 
@@ -36,7 +53,10 @@ def check_evidence(case: WasteCase, assessment: SafetyAssessment, prior_findings
         label=Label.SAFETY,
     ))
 
-    cited = sorted({s for f in prior_findings for s in f.source_ids})
+    cited = sorted({sid for f in prior_findings for sid in f.source_ids})
+    if material is not None and material.get("id") == "agri_residue":
+        cited = [sid for sid in cited if sid not in {"SRC_CPCB", "SRC_SPCB"}]
+
     for sid in cited:
         src = sources.get(sid)
         if not src:
@@ -48,7 +68,7 @@ def check_evidence(case: WasteCase, assessment: SafetyAssessment, prior_findings
             label=Label.REFERENCE,
             source_ids=[sid],
             uncertainties=["Clause-level wording is not verified by this project."] if src.get("date_checked") else
-                          ["This source was not checked by this project."],
+                           ["This source was not checked by this project."],
             next_step=src.get("find_at", ""),
         ))
 
