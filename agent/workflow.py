@@ -30,7 +30,6 @@ from tools.disposal import EMERGENCY_WARNING
 
 ToolFn = Callable[[WasteCase, SafetyAssessment, list[Finding]], list[Finding]]
 
-# Registry: action -> deterministic tool. Tests may replace entries to simulate tool failures.
 TOOL_REGISTRY: dict[str, ToolFn] = {
     Action.INVESTIGATE_RECOVERY.value: lambda c, a, prior: T.investigate_recovery(c, a),
     Action.CHECK_DISPOSAL.value: lambda c, a, prior: T.check_disposal_pathways(c, a),
@@ -44,13 +43,7 @@ LIVE_BANNER = "LIVE - decisions from Strands Decider 2B"
 
 
 def available_options(executed: list[str], assessment: SafetyAssessment) -> list[str]:
-    """The typed option set offered to the Decider at this step.
-
-    Only loop hygiene is applied here: actions that already ran are removed,
-    `request_info` is removed when nothing is missing, and `conclude` is only
-    offered after at least one step. Safety decisions are NOT made here; they
-    are made by the guardrail AFTER the Decider proposes.
-    """
+    """Offer actions not already run; remove irrelevant request/conclude options."""
     opts = [a.value for a in Action if a.value not in executed]
     if not assessment.missing_info and Action.REQUEST_INFO.value in opts:
         opts.remove(Action.REQUEST_INFO.value)
@@ -93,8 +86,23 @@ def _recommend(case: WasteCase, assessment: SafetyAssessment, executed: list[str
     }[pathway]
     if assessment.level == Level.REGULATED:
         steps.append("Use only authorized channels for this regulated material; no do-it-yourself processing.")
-    if pathway in (Pathway.RECOVER, Pathway.DISPOSE):
-        steps.append("Confirm any named authority or handler directly before acting; this app verifies no facility.")
+    if pathway == Pathway.RECOVER and assessment.level == Level.ROUTINE:
+        steps.append(
+            "Contact the district agriculture office or nearest Krishi Vigyan Kendra (KVK) "
+            "to confirm suitable rice-straw recovery methods, machinery availability, "
+            "and local biomass buyers. Confirm acceptance directly; this app has not "
+            "verified any local buyer or facility."
+        )
+    elif pathway == Pathway.DISPOSE:
+        steps.append(
+            "Confirm the appropriate disposal route with the relevant local authority "
+            "before acting; this app has not verified any local facility."
+        )
+    elif pathway == Pathway.RECOVER:
+        steps.append(
+            "Confirm the suitability of the recovery route with a qualified local "
+            "authority before acting; this app has not verified any local facility."
+        )
     if pathway == Pathway.VERIFY:
         steps.append("Answer the open questions in the trace and run the assessment again.")
     return Recommendation(pathway, headline, reasons, steps)
@@ -191,7 +199,7 @@ def run_case(
             record.findings = found
             findings_so_far.extend(found)
             history.append((final_action, len(found)))
-        except Exception as exc:  # a tool failure must not crash the whole case
+        except Exception as exc:
             record.error = f"Tool '{final_action}' failed: {exc}"
             result.warnings.append(record.error)
             history.append((final_action, 0))
