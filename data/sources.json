@@ -1,0 +1,88 @@
+{
+  "_meta": {
+    "purpose": "Source registry for every reference-backed statement shown in RE:MAT AI.",
+    "honesty_note": "These are curated POINTERS to public rules and authorities. Rule titles and the issuing authority were confirmed by web search on 2026-10-19. Clause-level wording was NOT verified by this project. Always confirm on the official site before relying on a statement. No facility directory is bundled: the app never claims that a specific facility exists, is licensed, or accepts a given waste."
+  },
+  "sources": {
+    "SRC_EWASTE_RULES_2022": {
+      "title": "E-Waste (Management) Rules, 2022",
+      "authority": "Ministry of Environment, Forest and Climate Change (MoEFCC), India",
+      "kind": "regulation",
+      "url": "https://moef.gov.in/",
+      "find_at": "Search 'E-Waste (Management) Rules 2022' on the MoEFCC or CPCB website.",
+      "date_checked": "2026-10-19",
+      "check_method": "rule title and issuing authority confirmed via web search; clauses not verified",
+      "supports": "E-waste is handled through producer extended responsibility (EPR) and registered entities such as recyclers and refurbishers."
+    },
+    "SRC_BATTERY_RULES_2022": {
+      "title": "Batteries (Management) Rules, 2022",
+      "authority": "Ministry of Environment, Forest and Climate Change (MoEFCC), India",
+      "kind": "regulation",
+      "url": "https://moef.gov.in/",
+      "find_at": "Search 'Batteries (Management) Rules 2022' on the MoEFCC or CPCB website.",
+      "date_checked": "2026-10-19",
+      "check_method": "rule title and issuing authority confirmed via web search; clauses not verified",
+      "supports": "Waste batteries fall under producer extended responsibility; they should go through producer take-back or authorized collection and recycling."
+    },
+    "SRC_HOWM_RULES_2016": {
+      "title": "Hazardous and Other Wastes (Management and Transboundary Movement) Rules, 2016",
+      "authority": "Ministry of Environment, Forest and Climate Change (MoEFCC), India",
+      "kind": "regulation",
+      "url": "https://moef.gov.in/",
+      "find_at": "Search the rule title on the MoEFCC or CPCB website.",
+      "date_checked": "2026-10-19",
+      "check_method": "rule title and issuing authority confirmed via web search; clauses not verified",
+      "supports": "Hazardous wastes, including used oil, must be handled by authorized parties under State Pollution Control Board authorization."
+    },
+    "SRC_CPCB": {
+      "title": "Central Pollution Control Board (CPCB) - hazardous waste, e-waste and used oil pages",
+      "authority": "Central Pollution Control Board, India",
+      "kind": "authority",
+      "url": "https://cpcb.nic.in/",
+      "find_at": "On the CPCB site, look for hazardous waste management, e-waste and battery EPR pages and lists of registered or authorized entities.",
+      "date_checked": "2026-10-19",
+      "check_method": "authority identity confirmed via web search; individual list entries not verified",
+      "supports": "National regulator that publishes guidance and registered-entity information for hazardous waste, e-waste and used oil."
+    },
+    "SRC_SPCB": {
+      "title": "State Pollution Control Board / Pollution Control Committee of the relevant state or union territory",
+      "authority": "State Pollution Control Boards (India)",
+      "kind": "authority",
+      "url": "https://cpcb.nic.in/",
+      "find_at": "Search '<your state name> Pollution Control Board' and look for hazardous waste authorizations and authorized recyclers / TSDFs.",
+      "date_checked": "2026-10-19",
+      "check_method": "role described in regulations summaries found via web search; no individual board site verified",
+      "supports": "The state-level body that authorizes hazardous-waste handlers and can tell you who is authorized in your area."
+    },
+    "SRC_NPMCR_2014": {
+      "title": "National Policy for Management of Crop Residues (NPMCR), 2014",
+      "authority": "Department of Agriculture and Farmers Welfare, Government of India",
+      "kind": "policy",
+      "url": null,
+      "find_at": "Search 'National Policy for Management of Crop Residues 2014' on the Department of Agriculture and Farmers Welfare site.",
+      "date_checked": "2026-10-19",
+      "check_method": "policy title and in-situ / ex-situ management approach confirmed via web search; details not verified",
+      "supports": "Crop residue management through in-situ incorporation and ex-situ uses such as fuel, pellets and composting."
+    },
+    "SRC_LOCAL_AGRI": {
+      "title": "Local agriculture office or Krishi Vigyan Kendra (KVK)",
+      "authority": "State agriculture department / ICAR KVK network",
+      "kind": "authority",
+      "url": null,
+      "find_at": "Ask the district agriculture office or the nearest KVK about residue management machinery, buyers and local burning rules.",
+      "date_checked": null,
+      "check_method": "not checked by this project",
+      "supports": "Local, current information about residue buyers, machinery schemes and burning restrictions."
+    },
+    "SRC_EMERGENCY": {
+      "title": "Local emergency services",
+      "authority": "Local emergency services (112 is the unified emergency number in India)",
+      "kind": "emergency",
+      "url": null,
+      "find_at": "Dial your local emergency number.",
+      "date_checked": null,
+      "check_method": "general safety guidance, not a dataset lookup",
+      "supports": "Immediate danger such as fire, leaks, fumes or exposure."
+    }
+  }
+}

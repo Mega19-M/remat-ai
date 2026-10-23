@@ -1,1 +1,1 @@
-"""RE:MAT AI agent package."""
+"""RE:MAT AI decision agent."""
