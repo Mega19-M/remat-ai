@@ -6,17 +6,39 @@ from __future__ import annotations
 
 import html
 import json
+import os
 
 import streamlit as st
 
 import config
-from agent.decider import DeciderUnavailable, HttpDeciderBackend
+from agent.decider import HttpDeciderBackend
 from agent.generation import BedrockGenerator
 from agent.schemas import OBJECTIVES, CaseResult, Label, WasteCase
 from agent.workflow import run_case
 from tools.material_lookup import load_scenarios, load_sources
 
 config.load_dotenv_if_present()
+
+# Copy Streamlit Cloud Secrets into environment variables before loading settings.
+# Secret values are never rendered in the UI.
+_SECRET_ENV_NAMES = (
+    "REMAT_DECIDER_URL",
+    "DECIDER_API_KEY",
+    "REMAT_DECIDER_MODEL_FIELD",
+    "REMAT_DECIDER_TIMEOUT_S",
+    "REMAT_BEDROCK_MODEL_ID",
+    "AWS_REGION",
+    "AWS_DEFAULT_REGION",
+    "REMAT_MAX_STEPS",
+)
+for _name in _SECRET_ENV_NAMES:
+    try:
+        if _name in st.secrets and _name not in os.environ:
+            os.environ[_name] = str(st.secrets[_name])
+    except Exception:
+        # The app must also run in Demo mode without configured secrets.
+        pass
+
 SETTINGS = config.Settings.from_env()
 
 st.set_page_config(page_title="RE:MAT AI", page_icon="♻️", layout="wide")
@@ -108,14 +130,15 @@ with st.sidebar:
                                           help="A model id you have access to. Run scripts/check_bedrock.py to list options.")
             region = st.text_input("AWS region", value=SETTINGS.aws_region, key="region")
             if st.button("Check Decider server"):
-                try:
-                    info = HttpDeciderBackend(decider_url, 5, api_key=SETTINGS.decider_api_key).health()
-                    st.success("Decider endpoint reachable.")
-                    st.json(info)
-                except DeciderUnavailable as exc:
-                    st.error(str(exc))
+                st.info(
+                    "This button does not call a separate health endpoint because the hosted service "
+                    "may not expose one. Run an assessment to test the actual authenticated decision request."
+                )
         if st.session_state.get("decider_url", SETTINGS.decider_url).startswith("https://"):
-            st.caption("Using the hosted HTTPS Decider endpoint. The API key is read from DECIDER_API_KEY in your local .env; it is not displayed.")
+            st.caption(
+                "Using the hosted HTTPS Decider endpoint. The API key is loaded from app settings "
+                "and is not displayed."
+            )
         else:
             st.caption("Using a local Decider server. Start `strands-decider serve` in a separate terminal. "
                        "AWS credentials for the optional Bedrock summary come from your normal AWS configuration.")
