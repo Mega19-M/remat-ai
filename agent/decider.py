@@ -150,7 +150,7 @@ def _parse_bool(answer: Any) -> Optional[bool]:
 
     if isinstance(answer, dict):
         # Common wrapper fields
-        for key in ("answer", "value", "prediction", "selected", "label", "choice", "result"):
+        for key in ("answer", "value", "prediction", "selected", "label", "choice", "result", "noul"):
             if key in answer:
                 parsed = _parse_bool(answer[key])
                 if parsed is not None:
