@@ -1,4 +1,4 @@
-="""Decision backends: live Decider client and clearly labelled simulation.
+"""Decision backends: live Decider client and clearly labelled simulation.
 
 This module supports:
 - Hosted Decider POST /v1/decide
