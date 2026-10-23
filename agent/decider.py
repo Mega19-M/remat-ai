@@ -387,11 +387,14 @@ class HttpDeciderBackend:
         answers = raw["answers"]
 
         if self.hosted:
-            true_options: list[str] = []
+            # The hosted API returns Noul answers as probabilities, e.g.
+            # {"type": "noul", "noul": 0.93}. These are not booleans.
+            # Compare the probability for each candidate and select the
+            # highest-scoring candidate; requiring exactly one score >= 0.5
+            # is incorrect because multiple candidates can exceed 0.5.
+            scores: dict[str, float] = {}
             unknown: dict[str, Any] = {}
 
-            # Handle both per-question answers and servers that wrap the whole
-            # response under "result" or "answer".
             for index, option in enumerate(options, start=1):
                 question_key = f"action_{index}"
                 answer = answers.get(question_key)
@@ -403,11 +406,22 @@ class HttpDeciderBackend:
                     unknown[question_key] = {"type": "missing"}
                     continue
 
-                parsed = _parse_bool(answer)
-                if parsed is True:
-                    true_options.append(option)
-                elif parsed is None:
+                probability = None
+                if isinstance(answer, dict) and "noul" in answer:
+                    candidate = answer["noul"]
+                    if isinstance(candidate, (int, float)) and not isinstance(candidate, bool):
+                        if 0.0 <= float(candidate) <= 1.0:
+                            probability = float(candidate)
+
+                if probability is None:
+                    parsed = _parse_bool(answer)
+                    if parsed is not None:
+                        probability = 1.0 if parsed else 0.0
+
+                if probability is None:
                     unknown[question_key] = _answer_shape(answer)
+                else:
+                    scores[option] = probability
 
             if unknown:
                 raise DeciderResponseError(
@@ -416,17 +430,19 @@ class HttpDeciderBackend:
                     raw={"answer_shapes": unknown},
                 )
 
-            if len(true_options) != 1:
+            if not scores:
                 raise DeciderResponseError(
-                    "Hosted Decider did not mark exactly one action true. "
-                    "No live decision was made.",
-                    raw={"true_options": true_options, "answer_keys": list(answers.keys())[:30]},
+                    "Hosted Decider returned no usable Noul probabilities.",
+                    raw={"answer_keys": list(answers.keys())[:30]},
                 )
 
-            selected = true_options[0]
-            confidence = None
-            probabilities = None
-            derived_from = "The sole action marked true by hosted Noul responses."
+            selected = max(scores, key=scores.get)
+            confidence = scores[selected]
+            probabilities = scores
+            derived_from = (
+                "Selected the action with the highest hosted Decider Noul "
+                "probability across the available candidates."
+            )
         else:
             answer = answers.get(self.question_name)
             if answer is None:
